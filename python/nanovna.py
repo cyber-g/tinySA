@@ -8,6 +8,9 @@ from serial.tools import list_ports
 VID = 0x0483 #1155
 PID = 0x5740 #22336
 
+HEIGHT = 480
+WIDTH  = 320
+
 # Get nanovna device automatically
 def getport() -> str:
     device_list = list_ports.comports()
@@ -206,8 +209,8 @@ class NanoVNA:
     def capture(self):
         from PIL import Image
         self.send_command("capture\r")
-        b = self.serial.read(320 * 240 * 2)
-        x = struct.unpack(">76800H", b)
+        b = self.serial.read(HEIGHT * WIDTH * 2)
+        x = struct.unpack(">"+str(HEIGHT * WIDTH)+"H", b)
         # convert pixel format from 565(RGB) to 8888(RGBA)
         arr = np.array(x, dtype=np.uint32)
         arr = 0xFF000000 + ((arr & 0xF800) >> 8) + ((arr & 0x07E0) << 5) + ((arr & 0x001F) << 19)
