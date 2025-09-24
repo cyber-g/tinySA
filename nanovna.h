@@ -159,7 +159,7 @@ typedef uint64_t freq_t;
 #define DEFAULT_IF  ((freq_t)977400000)
 #define DEFAULT_IF_PLUS  ((freq_t)1070100000)
 extern uint16_t hw_if;
-#define DEFAULT_SPUR_OFFSET ((freq_t)(actual_rbw_x10 > 3000 ? 1500000 : 1000000))
+#define DEFAULT_SPUR_OFFSET ((freq_t)(actual_rbw_x10 >= 3000 ? 1500000 : 1000000))
 #define STATIC_DEFAULT_SPUR_OFFSET ((freq_t) 1500000)
 extern char *hw_text;
 
@@ -177,7 +177,8 @@ extern char *hw_text;
 #define DRIVE2_MAX_FREQ     2100000000ULL           // LO drive 2
 #define LOW_SHIFT_FREQ      2000000ULL              // shift IF to avoid zero Hz within IF
 
-#define USE_SHIFT2_RBW  4000        // use shift2_level_offset if actual_rbw_x10 is larger then this.
+#define USE_SHIFT2_RBW  8500        // shift2_level_offset rbw
+#define USE_SHIFT1_RBW  6000        // shift1_level_offset rbw
 #ifdef __NEW_SWITCHES__
 #define DIRECT_START config.direct_start
 #define DIRECT_STOP  config.direct_stop
@@ -313,6 +314,7 @@ void resume_once(uint16_t c);
 #ifdef TINYSA4
 void set_deviation(int d);
 void set_depth(int d);
+void set_avoid(int s);
 extern int LO_harmonic;
 #endif
 void toggle_mute(void);
@@ -878,6 +880,7 @@ typedef struct config {
 #endif
 #ifdef TINYSA4
   uint8_t hide_21MHz;
+  uint8_t no_audio_agc;
 #endif
   float sweep_voltage;
   float switch_offset;
@@ -1495,7 +1498,7 @@ typedef struct properties {
 
 //sizeof(properties_t) == 0x1200
 
-#define CONFIG_MAGIC  0x434f4e6d
+#define CONFIG_MAGIC  0x434f4e6e
 #define SETTING_MAGIC 0x434f4e6d
 
 extern int16_t lastsaveid;

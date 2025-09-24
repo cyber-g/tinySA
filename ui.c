@@ -2782,6 +2782,21 @@ static UI_FUNCTION_ADV_CALLBACK(menu_linear_averaging_acb)
   ui_mode_normal();
 }
 
+static UI_FUNCTION_ADV_CALLBACK(menu_audio_agc_acb)
+{
+  (void)data;
+  (void)item;
+  if (b){
+    b->icon = config.no_audio_agc ? BUTTON_ICON_NOCHECK : BUTTON_ICON_CHECK;
+    return;
+  }
+  config.no_audio_agc = ! config.no_audio_agc;
+  dirty = true;
+  config_save();
+  //  menu_move_back();
+  ui_mode_normal();
+}
+
 
 #endif
 
@@ -4941,6 +4956,7 @@ static const menuitem_t menu_settings[] =
   { MT_ADV_CALLBACK,0,              "PROGRESS\nBAR",        menu_progress_bar_acb},
   { MT_ADV_CALLBACK,     0,         "DIRECT\nMODE",         menu_direct_acb},
   { MT_ADV_CALLBACK,     0,         "LINEAR\nAVERAGING",    menu_linear_averaging_acb},
+  { MT_ADV_CALLBACK,     0,         "AUDIO\nAGC",           menu_audio_agc_acb},
 #ifdef __HARMONIC__
   { MT_SUBMENU          ,0,         "HARMONIC",             menu_harmonic},
 #endif
@@ -6212,14 +6228,20 @@ redraw_cal_status:
   if (setting.multi_band){
     ili9341_set_foreground(LCD_BRIGHT_COLOR_GREEN);
     lcd_printf(x, y, "MULTI");
-    y += 2*YSTEP + YSTEP/2;
+    y = add_quick_menu(y+= YSTEP, (menuitem_t *)menu_band_select);
   }
 #endif
 #ifdef TINYSA4
-  if (setting.measurement != M_OFF){
+  const uint8_t measurement = setting.measurement;
+  if (measurement != M_OFF) {
     ili9341_set_foreground(LCD_BRIGHT_COLOR_GREEN);
-    lcd_printf(x, y, measurement_text[setting.measurement]);
-    y += 2*YSTEP + YSTEP/2;
+    lcd_printf(x, y, measurement_text[measurement]);
+    const menuitem_t *measurement_menuitem = measurement < M_LINEARITY
+      ? menu_measure 
+      : (measurement < M_NF_TINYSA 
+        ? menu_measure2 
+        : menu_measure_noise_figure);
+    y = add_quick_menu(y += YSTEP, (menuitem_t *)measurement_menuitem);
   }
 
 #endif
