@@ -259,16 +259,27 @@ static THD_FUNCTION(Thread1, arg)
     }
 //  STOP_PROFILE
     // Run Shell command in sweep thread
-    if (shell_function) {
-      operation_requested = OP_NONE; // otherwise commands  will be aborted
-      do {
-        shell_function(shell_nargs - 1, &shell_args[1]);
-        shell_function = 0;
-        if (operation_requested == OP_NONE) // Don't prompt if aborted
-          shell_printf(VNA_SHELL_PROMPT_STR);
-        // Resume shell thread
-        if (!abort_enabled) osalThreadDequeueNextI(&shell_thread, MSG_OK);
-      } while (shell_function);
+    vna_shellcmd_t local_func;
+
+    chSysLock();
+    local_func = shell_function;
+    shell_function = 0;
+    chSysUnlock();
+
+    if (local_func) {
+      operation_requested = OP_NONE; // otherwise commands will be aborted
+      local_func(shell_nargs - 1, &shell_args[1]);
+
+      if (operation_requested == OP_NONE) // Don't prompt if aborted
+        shell_printf(VNA_SHELL_PROMPT_STR);
+
+      // Resume shell thread
+      if (!abort_enabled) {
+        chSysLock();
+        osalThreadDequeueNextI(&shell_thread, MSG_OK);
+        chSysUnlock();
+      }
+
       if (dirty) {
         if (MODE_OUTPUT(setting.mode))
           draw_menu();    // update screen if in output mode and dirty
@@ -498,7 +509,7 @@ VNA_SHELL_FUNCTION(cmd_wait)
     return;
   }
   break_execute = false;
-  drawMessageBox("Info", "Waiting", 0) ;
+//  drawMessageBox("Info", "Waiting", 0) ;
   if (argc == 1) {
     uint32_t t = my_atoi(argv[0]);
     while (t > 0 && !break_execute) {
@@ -513,7 +524,30 @@ VNA_SHELL_FUNCTION(cmd_wait)
     }
   }
   redraw_request|= REDRAW_AREA|REDRAW_FREQUENCY;
-  draw_all(true);
+//  draw_all(true);  // causes stack overflow
+}
+
+VNA_SHELL_FUNCTION(cmd_waitscan)
+{
+  (void)argc;
+  (void)argv;
+  uint32_t count = 1;
+  if (argc == 1 && argv[0][0] == '?') {
+    usage_printf("waitscan [{scans}]\r\n");
+    return;
+  }
+  break_execute = false;
+  pause_sweep();
+//  drawMessageBox("Info", "Waiting", 0) ;
+  if (argc == 1) {
+    count = my_atoi(argv[0]);
+  }
+  resume_once(count) ;
+  while (!is_paused() && !break_execute) {
+    chThdSleepMilliseconds(100);
+  }
+  redraw_request|= REDRAW_AREA|REDRAW_FREQUENCY;
+//  draw_all(true);  // causes stack overflow
 }
 
 VNA_SHELL_FUNCTION(cmd_repeat)
@@ -1236,7 +1270,11 @@ config_t config = {
   .direct_stop  = 985000000UL,
   .overclock = 0,
   .hide_21MHz = false,
+  .wfm_1khz_harmonic = 0,  // Disabled by default; 0=off, 1-100=amplitude percentage for ~1kHz harmonic
 #endif
+#ifdef __USE_SD_CARD__
+  .sd_icon_save = SDIS_DEFAULT,
+#endif // __USE_SD_CARD__
 };
 
 
@@ -1374,8 +1412,13 @@ VNA_SHELL_FUNCTION(cmd_scan)
   freq_t stop  = get_sweep_frequency(ST_STOP);
   uint32_t old_points = sweep_points;
   uint32_t i;
+  int repeat = 1;
   if (argc == 0)
     goto do_scan;
+  if (argc == 1) {
+    repeat = my_atoi(argv[0]);
+    goto do_scan;
+  }
   if (argc < 2 || argc > 4) {
     usage_printf("scan {start(Hz)} {stop(Hz)} [points] [outmask]\r\n");
     return;
@@ -1401,6 +1444,9 @@ do_scan:
   setting.sweep = true;         // prevent abort
   sweep(true);
   setting.sweep = false;
+  repeat -= 1;
+  if (repeat > 0)
+    goto do_scan;
   // Output data after if set (faster data recive)
   if (argc == 4 && !operation_requested) {
     uint16_t mask = my_atoui(argv[3]);
@@ -1870,6 +1916,28 @@ VNA_SHELL_FUNCTION(cmd_recall)
   shell_printf("recall {id}\r\n");
 }
 
+VNA_SHELL_FUNCTION(cmd_channel)
+{
+  if (argc == 0) {
+    for (int c=0;c<3;c++){
+      shell_printf("channel[%d] : %4.1f\r\n", c+1, channel_power[c]);
+    }
+    return;
+  }
+  if (argc != 1)
+    goto usage;
+  if (argv[0][0] == '?')
+    goto usage;
+  int id = my_atoi(argv[0]);
+  if (id < 1 || id > 3)
+    goto usage;
+  id -= 1;
+  shell_printf("%4.1f\r\n",channel_power[id]);
+  return;
+ usage:
+  shell_printf("channel [1-3]\r\n");
+}
+
 const char * const trc_channel_name[TRACES_MAX] = {
   [TRACE_ACTUAL] = "MEASURED",
   [TRACE_STORED] = "STORED",
@@ -2107,6 +2175,8 @@ usage:
   shell_printf("marker [n] [%s|{freq}|{index}] [{n}|%s]\r\n", cmd_marker_list, cmd_marker_on_off);
 }
 
+
+
 VNA_SHELL_FUNCTION(cmd_touchcal)
 {
   (void)argc;
@@ -2230,7 +2300,13 @@ char *hw_text = "";
 
 const char *get_hw_version_text(void)
 {
+  int v2 = -100;
   int v = adc1_single_read(0);
+  while (v-v2 < -20 || v-v2 > +20) {
+    v2 = v;
+    chThdSleepMilliseconds(1);
+    v = adc1_single_read(0);
+  }
   for (int i=0; i<MAX_VERSION_TEXT;i++) {
     if (hw_version_text[i].min_adc <= v && v <= hw_version_text[i].max_adc) {
       hwid = hw_version_text[i].hwid;
@@ -2243,6 +2319,8 @@ const char *get_hw_version_text(void)
   hw_if = 0;
   return "Unknown";
 }
+#else
+const char *hw_text = "ZS304";
 #endif
 
 VNA_SHELL_FUNCTION(cmd_version)
@@ -2429,6 +2507,7 @@ static const VNAShellCommand commands[] =
 #endif
     {"resume"      , cmd_resume      , CMD_WAIT_MUTEX | CMD_RUN_IN_LOAD},
     {"wait"        , cmd_wait        , CMD_RUN_IN_LOAD},                                 // This lets the sweep continue
+    {"waitscan"    , cmd_waitscan    , CMD_RUN_IN_LOAD},                                 // This lets the sweep continue
     {"repeat"      , cmd_repeat      , CMD_RUN_IN_LOAD},
     {"status"      , cmd_status      , CMD_RUN_IN_LOAD},
     {"caloutput"   , cmd_caloutput   , CMD_RUN_IN_LOAD},
@@ -2437,6 +2516,7 @@ static const VNAShellCommand commands[] =
     {"trace"       , cmd_trace       , CMD_WAIT_MUTEX | CMD_RUN_IN_LOAD},
     {"trigger"     , cmd_trigger     , CMD_RUN_IN_LOAD},
     {"marker"      , cmd_marker      , CMD_RUN_IN_LOAD},
+    {"channel"     , cmd_channel     , CMD_WAIT_MUTEX },
 #ifdef __DRAW_LINE__
     {"line"        , cmd_line        , CMD_RUN_IN_LOAD},
 #endif
@@ -2797,12 +2877,26 @@ static void VNAShell_executeLine(char *line)
     // Skip wait mutex if process UI
     if ((cmd_flag & CMD_RUN_IN_UI) && (sweep_mode&SWEEP_UI_MODE)) cmd_flag&=~CMD_WAIT_MUTEX;
     if (cmd_flag & CMD_WAIT_MUTEX) {
+      chSysLock();
       shell_function = scp->sc_function;
       operation_requested|=OP_CONSOLE;      // this will abort current sweep to give priority to the new request
+      chSysUnlock();
       // Wait execute command in sweep thread
       if (!abort_enabled && shell_function != 0){
+        int timeout_count = 0;
+        msg_t result;
         do {
-          osalThreadEnqueueTimeoutS(&shell_thread, TIME_INFINITE);
+          result = osalThreadEnqueueTimeoutS(&shell_thread, MS2ST(5000));  // 5 second timeout
+          if (result == MSG_TIMEOUT) {
+            timeout_count++;
+            if (timeout_count > 3) {
+              shell_printf("Command timeout\r\n");
+              chSysLock();
+              shell_function = 0;  // clear stuck command
+              chSysUnlock();
+              break;
+            }
+          }
         } while (shell_function);
       }
     } else {
@@ -2880,7 +2974,7 @@ void sd_card_load_config(char *filename){
 #endif
 
 #ifdef VNA_SHELL_THREAD
-static THD_WORKING_AREA(waThread2, /* cmd_* max stack size + alpha */442);
+static THD_WORKING_AREA(waThread2, /* cmd_* max stack size + alpha */450);
 THD_FUNCTION(myshellThread, p)
 {
   (void)p;

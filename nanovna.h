@@ -18,7 +18,7 @@
  */
 #include "ch.h"
 
-//#ifdef TINYSA_F303
+#ifdef TINYSA_F303
 #ifdef TINYSA_F072
 #error "Remove comment for #ifdef TINYSA_F303"
 #endif
@@ -26,7 +26,7 @@
 #define TINYSA4
 #endif
 #define TINYSA4_PROTO
-//#endif
+#endif
 
 #ifdef TINYSA_F072
 #ifdef TINYSA_F303
@@ -168,7 +168,7 @@ extern char *hw_text;
 #define HIGH_MAX_FREQ_MHZ   1130
 #define MINIMUM_DIRECT_FREQ  823000000ULL
 #define ULTRA_AUTO         10000000000ULL // 10GHz
-
+#define MAX_CTCSS_FREQ  255
 
 //#define LOW_MAX_FREQ         800000000ULL
 //#define MIN_BELOW_LO         550000000ULL   // not used????
@@ -801,6 +801,18 @@ float marker_to_value(const int i);
 #define _MODE_AUTO_FILENAME    0x10
 #define _MODE_MHZ_CSV          0x20
 
+#ifdef __USE_SD_CARD__
+// SD Icon Save (SDIS) configuration
+#define SDIS_CAPTURE (1 << 0)
+#define SDIS_TRACES (1 << 1)
+// Validity mask is needed to distinguish disabled SD card icon saving
+// from the case with old config that does not have sd_icon_save member
+// (the corresponding padding byte was always equal to zero)
+#define SDIS_VALID_MASK (1 << 7)
+#define SDIS_DEFAULT (SDIS_CAPTURE | SDIS_VALID_MASK)
+#define SDIS_IS_ENABLED ((config.sd_icon_save & ~SDIS_VALID_MASK) != 0)
+#endif // __USE_SD_CARD__
+
 #pragma pack(push, 4)
 typedef struct config {
   int32_t magic;
@@ -881,7 +893,11 @@ typedef struct config {
 #ifdef TINYSA4
   uint8_t hide_21MHz;
   uint8_t no_audio_agc;
+  uint8_t wfm_1khz_harmonic;  // 0=off, 1-100=amplitude percentage for adding ~1kHz harmonic to low freq WFM
 #endif
+#ifdef __USE_SD_CARD__
+  uint8_t sd_icon_save;   // enum
+#endif // __USE_SD_CARD__
   float sweep_voltage;
   float switch_offset;
   int16_t   ext_zero_level;
@@ -1860,9 +1876,9 @@ void interpolate_maximum(int m);
 void calibrate_modulation(int modulation, int8_t *correction);
 
 enum {
-  M_OFF, M_IMD, M_OIP3, M_PHASE_NOISE, M_SNR, M_PASS_BAND, M_LINEARITY, M_AM, M_FM, M_THD, M_CP, M_NF_TINYSA, M_NF_STORE, M_NF_VALIDATE, M_NF_AMPLIFIER, M_DECONV,M_MAX
+  M_OFF, M_IMD, M_OIP3, M_PHASE_NOISE, M_SNR, M_PASS_BAND, M_WIDTH, M_AM, M_FM, M_THD, M_CP, M_NF_TINYSA, M_NF_STORE, M_NF_VALIDATE, M_NF_AMPLIFIER, M_DECONV, M_LINEARITY, M_MAX
 };
-#define MEASUREMENT_TEXT "OFF","HARM","OIP3","PN","SNR","PASS","LIN","AM","FM","THD","CP","NF T","NF S","NF V","NF A", "DECONF"
+#define MEASUREMENT_TEXT "OFF","HARM","OIP3","PN","SNR","PASS", "WIDTH","AM","FM","THD","CP","NF T","NF S","NF V","NF A", "DECONF", "LIN"
 
 enum {
   T_AUTO, T_NORMAL, T_SINGLE, T_DONE, T_UP, T_DOWN, T_MODE, T_PRE, T_POST, T_MID, T_BEEP, T_AUTO_SAVE,

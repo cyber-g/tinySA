@@ -1595,7 +1595,7 @@ static const menuitem_t  menu_settings3[];
 static const menuitem_t  menu_measure_noise_figure[];
 static const menuitem_t  menu_calibrate_harmonic[];
 static const menuitem_t  menu_calibrate_normal[];
-static const menuitem_t  menu_calibrate_max[];
+//static const menuitem_t  menu_calibrate_max[];
 #endif
 static const menuitem_t  menu_calibrate[];
 static const menuitem_t  menu_sweep[];
@@ -2506,6 +2506,23 @@ static UI_FUNCTION_ADV_CALLBACK(menu_level_in_dBuV)
   menu_move_back(false);
 }
 
+#ifdef TINYSA4
+static UI_FUNCTION_ADV_CALLBACK(menu_audible_harmonic)
+{
+  (void)item;
+  (void)data;
+  if (b){
+    b->icon = (config.wfm_1khz_harmonic && setting.modulation_frequency < MAX_CTCSS_FREQ) ? BUTTON_ICON_CHECK : BUTTON_ICON_NOCHECK;
+    return;
+  }
+  if (setting.modulation_frequency >= MAX_CTCSS_FREQ)
+    return;
+  config.wfm_1khz_harmonic = config.wfm_1khz_harmonic ? 0 : 100;  // Toggle between off and 100%
+  dirty = true;
+//  menu_move_back(false);
+}
+#endif
+
 static UI_FUNCTION_ADV_CALLBACK(menu_smodulation_acb){
   (void)item;
   (void)data;
@@ -3002,6 +3019,16 @@ static UI_FUNCTION_ADV_CALLBACK(menu_measure_acb)
 //      ui_mode_keypad(KM_SPAN);
 //      set_sweep_frequency(ST_SPAN, uistat.value*2);
       set_measurement(M_PASS_BAND);
+//      SetAverage(4);
+
+      break;
+    case M_WIDTH:                             // occupied width measurement
+//      reset_settings(setting.mode);
+      markers[1].enabled = M_ENABLED;
+      markers[2].enabled = M_ENABLED;
+      kp_help_text = "dBc";
+      ui_mode_keypad(KM_LEVEL);
+      set_measurement(M_WIDTH);
 //      SetAverage(4);
 
       break;
@@ -4358,6 +4385,32 @@ static UI_FUNCTION_ADV_CALLBACK(menu_mhz_csv_acb)
   config_save();
 }
 
+static UI_FUNCTION_ADV_CALLBACK(menu_sd_icon_save_capture_acb)
+{
+  (void)item;
+  (void)data;
+
+  if (b) {
+    b->icon = config.sd_icon_save & SDIS_CAPTURE ? BUTTON_ICON_CHECK : BUTTON_ICON_NOCHECK;
+    return;
+  }
+  config.sd_icon_save ^= SDIS_CAPTURE;
+  config_save();
+}
+
+static UI_FUNCTION_ADV_CALLBACK(menu_sd_icon_save_traces_acb)
+{
+  (void)item;
+  (void)data;
+
+  if (b) {
+    b->icon = config.sd_icon_save & SDIS_TRACES ? BUTTON_ICON_CHECK : BUTTON_ICON_NOCHECK;
+    return;
+  }
+  config.sd_icon_save ^= SDIS_TRACES;
+  config_save();
+}
+
 #ifdef __SD_FILE_BROWSER__
 #include "vna_browser.c"
 #endif
@@ -4421,6 +4474,7 @@ static const menuitem_t  menu_modulation[] = {
   { MT_FORM | MT_KEYPAD,   KM_MODULATION,           "FREQ: %s",         "1Hz..3.5kHz"},
   { MT_FORM | MT_KEYPAD,   KM_DEPTH,               "AM DEPTH: %s%%",         "0..100"},
   { MT_FORM | MT_KEYPAD,   KM_DEVIATION,            "FM DEVIATION: %s",         "1kHz..300kHz"},
+  { MT_FORM | MT_ADV_CALLBACK, 0,                   "CTCSS + 1 kHz", menu_audible_harmonic},
 //  { MT_FORM | MT_ADV_CALLBACK, MO_NFM2,              MT_CUSTOM_LABEL,    menu_modulation_acb},
 //  { MT_FORM | MT_ADV_CALLBACK, MO_NFM3,              MT_CUSTOM_LABEL,    menu_modulation_acb},
 #else
@@ -5019,7 +5073,8 @@ static const menuitem_t menu_measure[] = {
   { MT_ADV_CALLBACK,            M_OIP3,       "OIP3",           menu_measure_acb},
   { MT_ADV_CALLBACK,            M_PHASE_NOISE,"PHASE\nNOISE",   menu_measure_acb},
   { MT_ADV_CALLBACK,            M_SNR,        "SNR",            menu_measure_acb},
-  { MT_ADV_CALLBACK,            M_PASS_BAND,  "-3dB\nWIDTH",     menu_measure_acb},
+  { MT_ADV_CALLBACK,            M_PASS_BAND,  "-3dB\nWIDTH",    menu_measure_acb},
+  { MT_ADV_CALLBACK,            M_WIDTH,   "OCCUPIED\nWIDTH",menu_measure_acb},
   { MT_SUBMENU,  0,             S_RARROW" MORE",                menu_measure2},
   { MT_NONE,   0, NULL, menu_back} // next-> menu_back
 };
@@ -5320,6 +5375,19 @@ static const menuitem_t menu_stimulus[] = {
 };
 
 #ifdef __USE_SD_CARD__
+static const menuitem_t menu_storage_sd_icon[] = {
+  { MT_ADV_CALLBACK, 0,       "SAVE\nCAPTURE",     menu_sd_icon_save_capture_acb },
+  { MT_ADV_CALLBACK, 0,       "SAVE\nTRACES",      menu_sd_icon_save_traces_acb },
+  { MT_NONE,         0,       NULL,                menu_back }
+};
+
+static const menuitem_t menu_storage_config[] = {
+  { MT_ADV_CALLBACK, 0,       "AUTO NAME",              menu_autoname_acb },
+  { MT_ADV_CALLBACK, 0,       "MHz\nCSV",               menu_mhz_csv_acb },
+  { MT_SUBMENU,      0,       "SD CARD\nICON",          menu_storage_sd_icon },
+  { MT_NONE,         0,       NULL,                     menu_back }
+};
+
 static const menuitem_t menu_storage[] = {
 #ifdef __SD_FILE_BROWSER__
   { MT_CALLBACK, FMT_BMP_FILE,      "LOAD\nCAPTURE",        menu_sdcard_browse_cb },
@@ -5327,12 +5395,11 @@ static const menuitem_t menu_storage[] = {
   { MT_CALLBACK, FMT_CMD_FILE,      "LOAD\nCMD",             menu_sdcard_browse_cb },
   { MT_CALLBACK, FMT_CFG_FILE,      "LOAD\nCONFIG",          menu_sdcard_browse_cb },
 #endif
-  { MT_ADV_CALLBACK, 0,             "AUTO NAME",            menu_autoname_acb },
   { MT_CALLBACK,    FMT_BMP_FILE,   "SAVE\nCAPTURE",        menu_sdcard_cb},
   { MT_CALLBACK,    FMT_PRS_FILE,   "SAVE\nSETTINGS",       menu_sdcard_cb},
   { MT_CALLBACK,    FMT_CFG_FILE,   "SAVE\nCONFIG",         menu_sdcard_cb},
-  { MT_ADV_CALLBACK, 0,             "MHz\nCSV",             menu_mhz_csv_acb },
   { MT_CALLBACK,    FMT_CSV_FILE,   "SAVE\nTRACES",         menu_save_traces_cb},
+  { MT_SUBMENU,     0,              "CONFIG",               menu_storage_config },
 //  { MT_KEYPAD,      KM_INTERVAL,    "INTERVAL\n\b%s",       NULL },
   { MT_NONE,    0, NULL, menu_back} // next-> menu_back
 };
@@ -5403,35 +5470,54 @@ static void menu_item_modify_attribute(                     // To modify menu bu
 
 static void fetch_numeric_target(uint8_t mode)
 {
+  char *out_format = "%.3QHz";
   switch (mode) {
   case KM_START:
     uistat.freq_value = get_sweep_frequency(ST_START) + (setting.frequency_offset - FREQUENCY_SHIFT);
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_STOP:
     uistat.freq_value = get_sweep_frequency(ST_STOP) + (setting.frequency_offset - FREQUENCY_SHIFT);
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_CENTER:
     uistat.freq_value = get_sweep_frequency(ST_CENTER) + (setting.frequency_offset - FREQUENCY_SHIFT);
-    char *out_format = "%.3QHz";
 #ifdef TINYSA4
     if (MODE_OUTPUT(setting.mode)) {
       if (uistat.freq_value > 990000000UL)
         out_format = "%.9QHz";
       else if (uistat.freq_value > 990000UL)
-        out_format = "%.6QHz";
-    }
+        out_format = "%.6Q";
+    } else
+      if (uistat.freq_value >= 1e9)
+        out_format = "%.6Q";
+
 #endif
     plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_SPAN:
     uistat.freq_value = get_sweep_frequency(ST_SPAN);
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_CW:
     uistat.freq_value = get_sweep_frequency(ST_CW) + (setting.frequency_offset - FREQUENCY_SHIFT);
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_SCALE:
   case KM_LINEAR_SCALE:
@@ -5582,19 +5668,35 @@ static void fetch_numeric_target(uint8_t mode)
 #ifdef __BANDS__
   case KM_BAND_START:
     uistat.freq_value = setting.bands[active_band].start + (setting.frequency_offset - FREQUENCY_SHIFT);;
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_BAND_END:
     uistat.freq_value = setting.bands[active_band].end + (setting.frequency_offset - FREQUENCY_SHIFT);;
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_BAND_CENTER:
     uistat.freq_value = (setting.bands[active_band].end + setting.bands[active_band].start)/2 + (setting.frequency_offset - FREQUENCY_SHIFT);
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_BAND_SPAN:
-    uistat.freq_value = abs(setting.bands[active_band].end-setting.bands[active_band].start);
-    plot_printf(uistat.text, sizeof uistat.text, "%.3QHz", uistat.freq_value);
+    uistat.freq_value = abs((long)setting.bands[active_band].end-(long)setting.bands[active_band].start);
+#ifdef TINYSA4
+    if (uistat.freq_value > 990000000UL)
+      out_format = "%.6Q";
+#endif
+    plot_printf(uistat.text, sizeof uistat.text, out_format, uistat.freq_value);
     break;
   case KM_BAND_LEVEL:
     uistat.value = value(setting.bands[active_band].level);
@@ -5878,7 +5980,7 @@ set_numeric_value(void)
     break;
   case KM_BAND_CENTER:
   {
-    freq_t span = abs(setting.bands[active_band].end - setting.bands[active_band].start);
+    freq_t span = abs((long)setting.bands[active_band].end - (long)setting.bands[active_band].start);
     freq_t center = uistat.freq_value - (setting.frequency_offset - FREQUENCY_SHIFT);
     setting.bands[active_band].start = center - span/2;
     setting.bands[active_band].end = center + span/2;
@@ -6402,7 +6504,7 @@ redraw_cal_status:
   // Compact status string
 //  ili9341_set_background(LCD_FG_COLOR);
   ili9341_set_foreground(LCD_FG_COLOR);
-  strncpy(buf,"      ",BLEN-1);
+  strncpy(buf,"     ",BLEN-1);
   if (setting.auto_IF)
     buf[0] = 'f';
   else
@@ -8062,7 +8164,10 @@ made_screenshot(int touch_x, int touch_y) {
   ili9341_set_background(LCD_BG_COLOR);
   ili9341_fill(4, SD_CARD_START, 16, 16);
   touch_wait_release();
-  menu_sdcard_cb(0, FMT_BMP_FILE);
+  if (config.sd_icon_save & SDIS_CAPTURE)
+    menu_sdcard_cb(0, FMT_BMP_FILE);
+  if (config.sd_icon_save & SDIS_TRACES)
+    menu_save_traces_cb(0, 0);
   return TRUE;
 }
 #endif
@@ -8182,7 +8287,7 @@ void ui_process_touch(void)
     switch (ui_mode) {
     case UI_NORMAL:
 #ifdef __USE_SD_CARD__
-      if (made_screenshot(touch_x, touch_y))
+      if (SDIS_IS_ENABLED && made_screenshot(touch_x, touch_y))
         break;
 #endif
       if (touch_quick_menu(touch_x, touch_y))
